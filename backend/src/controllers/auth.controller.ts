@@ -95,3 +95,30 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
         res.status(500).json({ message: 'Gagal mereset password', error: error.message });
     }
 };
+
+// TAMBAHKAN FUNGSI INI UNTUK MENGUBAH ROLE USER
+export const updateUserRole = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { role } = req.body;
+
+        if (!role) {
+            res.status(400).json({ message: 'Role baru wajib diisi.' });
+            return;
+        }
+
+        const [result]: any = await pool.execute(
+            'UPDATE users SET role = ? WHERE id = ?',
+            [role, id]
+        );
+
+        if (result.affectedRows === 0) {
+            res.status(404).json({ message: 'User tidak ditemukan.' });
+            return;
+        }
+
+        res.status(200).json({ message: 'Role user berhasil diperbarui.' });
+    } catch (error: any) {
+        res.status(500).json({ message: 'Gagal memperbarui role', error: error.message });
+    }
+};
