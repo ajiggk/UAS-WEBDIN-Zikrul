@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import pool from '../config/database';
+import fs from 'fs';
+import path from 'path';
 
 export const getBarang = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -37,11 +39,10 @@ export const getBarang = async (req: Request, res: Response): Promise<void> => {
         const [countResult]: any = await pool.execute(countSql, queryParams);
         const totalItems = countResult[0].total;
 
-        // Tambahkan Pagination
         baseSql += ` ORDER BY b.created_at DESC LIMIT ? OFFSET ?`;
-        queryParams.push(limit.toString(), offset.toString());
-
-        const [rows] = await pool.execute(baseSql, queryParams);
+        
+        const queryParamsWithLimit = [...queryParams, Number(limit), Number(offset)];
+        const [rows] = await pool.query(baseSql, queryParamsWithLimit);
 
         res.status(200).json({
             data: rows,
@@ -70,5 +71,54 @@ export const createBarang = async (req: Request, res: Response): Promise<void> =
         res.status(201).json({ message: 'Barang berhasil ditambahkan' });
     } catch (error: any) {
         res.status(500).json({ message: 'Error menambahkan barang', error: error.message });
+    }
+};
+
+export const updateBarang = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { kode_barang, nama_barang, kategori_id, kondisi, lokasi, jumlah } = req.body;
+        const fotoBaru = req.file ? req.file.filename : null;
+
+        // Ambil data foto lama
+        const [oldRows]: any = await pool.execute('SELECT foto FROM barang WHERE id = ?', [id]);
+        let fotoFinal = oldRows.length > 0 ? oldRows[0].foto : null;
+
+        if (fotoBaru) {
+            if (fotoFinal) {
+                const oldPath = path.join(__dirname, '../../uploads', fotoFinal);
+                if (fs.existsSync(oldPath)) {
+                    fs.unlinkSync(oldPath);
+                }
+            }
+            fotoFinal = fotoBaru;
+        }
+
+        const sql = `UPDATE barang SET kode_barang = ?, nama_barang = ?, kategori_id = ?, kondisi = ?, lokasi = ?, jumlah = ?, foto = ? WHERE id = ?`;
+        const values = [kode_barang, nama_barang, kategori_id, kondisi, lokasi, jumlah, fotoFinal, id];
+
+        await pool.execute(sql, values);
+        res.status(200).json({ message: 'Barang berhasil diupdate' });
+    } catch (error: any) {
+        res.status(500).json({ message: 'Error mengupdate barang', error: error.message });
+    }
+};
+
+export const deleteBarang = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+
+        const [oldRows]: any = await pool.execute('SELECT foto FROM barang WHERE id = ?', [id]);
+        if (oldRows.length > 0 && oldRows[0].foto) {
+            const fotoPath = path.join(__dirname, '../../uploads', oldRows[0].foto);
+            if (fs.existsSync(fotoPath)) {
+                fs.unlinkSync(fotoPath);
+            }
+        }
+
+        await pool.execute('DELETE FROM barang WHERE id = ?', [id]);
+        res.status(200).json({ message: 'Barang berhasil dihapus' });
+    } catch (error: any) {
+        res.status(500).json({ message: 'Error menghapus barang', error: error.message });
     }
 };

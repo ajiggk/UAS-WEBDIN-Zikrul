@@ -5,7 +5,8 @@ import bcrypt from 'bcrypt';
 // READ: Mengambil semua data user (Kecuali password untuk keamanan)
 export const getUsers = async (req: Request, res: Response): Promise<void> => {
     try {
-        const sqlQuery = 'SELECT id, nama, email, role, created_at, updated_at FROM users ORDER BY created_at DESC';
+        // PERBAIKAN: Menghapus 'updated_at' dari query karena kolom tersebut tidak ada di database
+        const sqlQuery = 'SELECT id, nama, email, role, created_at FROM users ORDER BY created_at DESC';
         const [rows] = await pool.execute(sqlQuery);
         
         res.status(200).json({ data: rows });
