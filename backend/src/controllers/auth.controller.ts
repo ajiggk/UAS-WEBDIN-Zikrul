@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import pool from '../config/database';
+import { transporter } from '../config/mailer';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -57,24 +58,64 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
             return;
         }
 
-        res.status(200).json({ message: 'Email terverifikasi.' });
+        const user = rows[0];
+
+        // Buat token khusus reset password yang berlaku 15 menit
+        const resetToken = jwt.sign(
+            { email: user.email },
+            process.env.JWT_SECRET as string,
+            { expiresIn: '15m' }
+        );
+
+        // Tautan frontend tempat user memasukkan password baru
+        const resetLink = `http://localhost:3000/reset-password?token=${resetToken}`;
+
+        // MENCETAK LINK KE TERMINAL SUPAYA MUDAH DIUJI UNTUK AKUN DUMMY
+        console.log(`\n==================================================`);
+        console.log(`LINK RESET PASSWORD UNTUK (${user.email}):`);
+        console.log(resetLink);
+        console.log(`==================================================\n`);
+
+        // Kirim email menggunakan Nodemailer dengan SMTP Gmail
+        await transporter.sendMail({
+            from: `"Inventaris Lab" <${process.env.EMAIL_USER}>`,
+            to: user.email,
+            subject: 'Permintaan Reset Password - Inventaris Lab',
+            html: `
+                <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+                    <h2 style="color: #059669;">Reset Password Akun</h2>
+                    <p>Halo <b>${user.nama}</b>,</p>
+                    <p>Anda menerima email ini karena ada permintaan untuk mereset kata sandi akun Inventaris Lab Anda.</p>
+                    <p>Silakan klik tautan di bawah ini untuk melanjutkan (tautan berlaku 15 menit):</p>
+                    <a href="${resetLink}" style="background-color: #059669; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 10px; margin-bottom: 10px;">Reset Password</a>
+                    <p>Jika Anda tidak merasa melakukan permintaan ini, abaikan saja email ini.</p>
+                    <hr style="border: none; border-top: 1px solid #eee; margin-top: 20px;" />
+                    <p style="font-size: 12px; color: #777;">Sistem Inventaris Lab Otomatis</p>
+                </div>
+            `,
+        });
+
+        res.status(200).json({ message: 'Tautan reset password berhasil dikirim ke email.' });
     } catch (error: any) {
-        res.status(500).json({ message: 'Gagal memproses', error: error.message });
+        console.error('Gagal kirim email:', error);
+        res.status(500).json({ message: 'Gagal mengirim email reset password', error: error.message });
     }
 };
 
 export const resetPassword = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { email, newPassword } = req.body;
+        const { token, newPassword } = req.body;
 
-        if (!email || !newPassword) {
-            res.status(400).json({ message: 'Email dan password baru wajib diisi.' });
+        if (!token || !newPassword) {
+            res.status(400).json({ message: 'Token dan password baru wajib diisi.' });
             return;
         }
 
-        const [rows]: any = await pool.execute('SELECT * FROM users WHERE email = ?', [email]);
-        if (rows.length === 0) {
-            res.status(404).json({ message: 'User dengan email tersebut tidak ditemukan.' });
+        let decoded: any;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET as string);
+        } catch (err) {
+            res.status(400).json({ message: 'Token reset password tidak valid atau sudah kedaluwarsa.' });
             return;
         }
 
@@ -82,11 +123,11 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
 
         const [result]: any = await pool.execute(
             'UPDATE users SET password = ? WHERE email = ?',
-            [hashedPassword, email]
+            [hashedPassword, decoded.email]
         );
 
         if (result.affectedRows === 0) {
-            res.status(404).json({ message: 'Gagal memperbarui password.' });
+            res.status(404).json({ message: 'User tidak ditemukan.' });
             return;
         }
 
@@ -96,7 +137,6 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
     }
 };
 
-// TAMBAHKAN FUNGSI INI UNTUK MENGUBAH ROLE USER
 export const updateUserRole = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
